@@ -1,0 +1,16 @@
+# Data, weights, outputs — never commit (owner rule)
+data/
+models/
+outputs/
+
+# Virtual environment
+venv/
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# Notebook checkpoints / experiment runs
+.ipynb_checkpoints/
+runs/
+*.pt

@@ -1,0 +1,12 @@
+# Core
+numpy>=1.24
+pandas>=2.0
+opencv-python>=4.8
+
+# Detection + tracking. ultralytics pulls in torch automatically —
+# do NOT add torch here. On Colab, the CUDA torch build comes preinstalled.
+ultralytics>=8.2
+
+# Mapping + dashboard
+folium>=0.14
+streamlit>=1.30
