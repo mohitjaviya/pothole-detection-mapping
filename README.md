@@ -67,7 +67,7 @@ dashcam video + GPS CSV -> YOLO detection -> tracking (unique IDs)
 ## Build order
 
 1. [x] Folder structure, requirements.txt, README
-2. [ ] Classical OpenCV baseline
+2. [x] Classical OpenCV baseline
 3. [ ] Colab training notebook (dataset download, train, export best.pt)
 4. [ ] GPS source decision (phone GPS logger CSV or simulated route)
 5. [ ] detect.py (YOLOv8 + ByteTrack -> raw track log)
