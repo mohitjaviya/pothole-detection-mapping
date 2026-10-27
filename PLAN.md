@@ -38,7 +38,8 @@ pothole-detection-mapping/
 │   ├── geotag.py          # frame timestamp -> GPS lat/lon join
 │   ├── map_builder.py     # Folium map + CSV report (no model dependency)
 │   └── evaluate.py        # baseline vs YOLOv8n vs YOLOv8s; day/night/wet/blur
-├── configs/               # YAML consumed by Ultralytics: data.yaml, bytetrack.yaml
+├── configs/               # static YAML (bytetrack.yaml); data.yaml is generated
+│                          #   per run into data/processed/ivcnz/ (never committed)
 ├── app/streamlit_app.py   # demo dashboard
 ├── notebooks/train_colab.ipynb  # Colab entry point: dataset, train, export best.pt
 ├── models/best.pt         # trained weights (never committed)

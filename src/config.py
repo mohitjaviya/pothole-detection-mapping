@@ -51,3 +51,20 @@ MAX_AREA_FRAC: float = 0.25             # reject huge blobs (shadows, road textu
 ASPECT_MIN: float = 0.33                # bbox aspect ratio (w/h) range to keep
 ASPECT_MAX: float = 3.0
 MIN_EXTENT: float = 0.3                 # contour area / bbox area; rejects spindly shapes
+
+# ---------------------------------------------------------------------------
+# Training (train.py; the GPU work runs on Colab/Kaggle)
+# ---------------------------------------------------------------------------
+DATASET_URL: str = (
+    "https://github.com/jaygala24/pothole-detection/releases/"
+    "download/v1.0.0/Pothole.Dataset.IVCNZ.zip"
+)
+DATASET_ZIP: Path = RAW_DIR / "Pothole.Dataset.IVCNZ.zip"
+DATASET_NAME: str = "ivcnz"
+RAW_DATASET_DIR: Path = RAW_DIR / DATASET_NAME
+PROCESSED_DATASET_DIR: Path = PROCESSED_DIR / DATASET_NAME
+SPLIT_SEED: int = 42                    # split reproducibility (GPU training itself is not bit-exact)
+SPLIT_RATIOS: tuple[float, float, float] = (0.8, 0.1, 0.1)
+EPOCHS: int = 50
+IMGSZ: int = 640
+CLASS_NAMES: tuple[str, ...] = ("pothole",)

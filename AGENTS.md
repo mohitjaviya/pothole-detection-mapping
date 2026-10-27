@@ -18,8 +18,9 @@ the approved plan with per-step milestones lives in PLAN.md.
   never committed.
 - `src/` — `baseline.py`, `train.py`, `detect.py`, `tracker.py`,
   `severity.py`, `geotag.py`, `map_builder.py`, `evaluate.py`, `config.py`.
-- `configs/` — YAML configs consumed by Ultralytics: `data.yaml` (dataset),
-  custom `bytetrack.yaml` (tracker tuning).
+- `configs/` — static YAML only (e.g. custom `bytetrack.yaml` tracker tuning).
+  `data.yaml` is GENERATED per run by train.py into the dataset root —
+  machine-specific, never committed.
 - `app/` — `streamlit_app.py`.
 - `notebooks/` — `train_colab.ipynb`.
 - `reports/` — evaluation figures and metric tables for the semester report
@@ -40,7 +41,8 @@ the approved plan with per-step milestones lives in PLAN.md.
 - `pathlib` for paths; type hints on all functions.
 - Every `src/` module does exactly one job and has a `main()` for CLI use.
 - All tunables (paths, thresholds, conf, frame skip) live in `src/config.py` —
-  never hardcoded in modules. Ultralytics-consumed YAML lives in `configs/`.
+  never hardcoded in modules. Static Ultralytics YAML lives in `configs/`;
+  `data.yaml` is generated per run into the dataset root (never commit it).
 - GPS CSV columns: `timestamp_sec, latitude, longitude`.
 - Severity classes: small / medium / large, from bbox area as a fraction of
   the frame.
