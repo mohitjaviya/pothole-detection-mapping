@@ -1,0 +1,6 @@
+source,condition,frames_processed,detections,unique_tracks,detections_per_frame,detection_retention,track_retention
+clip_synthetic_photos.mp4,clean,40,80,17,2.0,1.0,1.0
+clip_synthetic_photos.mp4,dim,40,69,14,1.725,0.862,0.824
+clip_synthetic_photos.mp4,blur,40,62,9,1.55,0.775,0.529
+clip_synthetic_photos.mp4,noise,40,50,11,1.25,0.625,0.647
+clip_synthetic_photos.mp4,motion,40,41,8,1.025,0.512,0.471

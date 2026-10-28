@@ -118,6 +118,20 @@ PIPELINE_MAP_HEATMAP: bool = True        # add the heatmap layer to the map
 PIPELINE_VIDEO_FPS_FALLBACK: float = 30.0  # fps used when the container has none
 
 # ---------------------------------------------------------------------------
+# Robustness sweep (robustness.py) — synthetic degradations of one clip
+# ---------------------------------------------------------------------------
+# Applied frame-by-frame inside the detection loop (one decode per condition),
+# so the SAME model, frame skip and clip are compared — only pixels change.
+ROBUSTNESS_CONDITIONS: tuple[str, ...] = ("clean", "dim", "blur", "noise", "motion")
+ROBUSTNESS_DIM_FACTOR: float = 0.45               # brightness multiplier (night/under-exposed)
+ROBUSTNESS_BLUR_KERNEL: tuple[int, int] = (9, 9)  # Gaussian kernel, odd (defocus, dirty lens)
+ROBUSTNESS_NOISE_SIGMA: float = 18.0              # Gaussian pixel noise std (0-255 scale)
+ROBUSTNESS_MOTION_KERNEL: int = 15                # horizontal smear length, odd (speed blur)
+ROBUSTNESS_SEED: int = 42                         # deterministic noise -> reproducible CSV
+ROBUSTNESS_OUT_DIR: Path = OUTPUTS_DIR / "robustness"
+ROBUSTNESS_REPORT: Path = REPORTS_DIR / "robustness.csv"
+
+# ---------------------------------------------------------------------------
 # Mapping (map_builder.py)
 # ---------------------------------------------------------------------------
 MAP_DEFAULT_CENTER: tuple[float, float] = (23.0225, 72.5714)
