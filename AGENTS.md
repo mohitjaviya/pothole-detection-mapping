@@ -25,8 +25,8 @@ the approved plan with per-step milestones lives in PLAN.md.
 - `notebooks/` — `train_colab.ipynb`.
 - `reports/` — evaluation figures and metric tables for the semester report
   (committed).
-- `tests/` — reproducible fake-data fixtures + back-half chain test
-  (committed).
+- `tests/` — reproducible fake-data fixtures + back-half chain test, plus the
+  detect.py contract test (stub model, no torch) (committed).
 
 ## Environment
 

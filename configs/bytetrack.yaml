@@ -1,0 +1,16 @@
+# ByteTrack tuning for potholes — used by detect.py (--tracker).
+# Static YAML: committed. (data.yaml is generated per run and never committed.)
+#
+# Why these values differ from the Ultralytics default:
+# A pothole rushes toward the camera, so its box moves a lot between frames
+# and plain IoU matching loses it. ByteTrack accepts a pair when
+# IoU >= 1 - match_thresh, so a HIGHER match_thresh = more permissive.
+# Potholes also disappear under the bonnet/dashboard for a moment before the
+# car passes over them, hence a longer track_buffer.
+tracker_type: bytetrack # tracker backend; botsort adds ReID but costs CPU
+track_high_thresh: 0.25 # pass 1: confident detections used for association
+track_low_thresh: 0.10 # pass 2: rescue low-confidence boxes (dirty asphalt)
+new_track_thresh: 0.30 # confidence needed to START a new track (kills speckle)
+track_buffer: 60 # frames a lost track stays alive (~2 s at 30 fps)
+match_thresh: 0.85 # permissive: match if IoU >= 0.15 (default 0.8 -> 0.20)
+fuse_score: true # blend detection confidence into the matching cost

@@ -57,12 +57,15 @@ pothole-detection-mapping/
        results table in `reports/` shows why fine-tuning is needed.
 3. [ ] **Training** (`src/train.py`, `notebooks/train_colab.ipynb`) — done when
        `models/best.pt` exists locally and val mAP is reported.
-4. [ ] **GPS source decision** — phone GPS logger CSV or simulated route.
-       Done when every sample video has a matching GPS CSV
-       (`timestamp_sec, latitude, longitude`). Settled before any geotag work.
-5. [ ] **detect.py** — YOLOv8 + ByteTrack on a sample video (`persist=True`),
-       CPU-friendly (yolov8n, frame skip). Done when `track_log.csv` has
-       stable track IDs.
+4. [x] **GPS source decision** — phone GPS logger CSV is primary, simulated
+       route is the fallback/demo. Done: both timestamp forms (epoch + ISO)
+       and both start-time forms (filename + `--start-time`) are supported,
+       and `tests/make_fake_data.py` provides a simulated route.
+5. [x] **detect.py** — YOLOv8 + ByteTrack on a sample video (`persist=True`),
+       CPU-friendly (yolov8n, frame skip). Done: `track_log.csv` columns match
+       `tracker.py` and frame indices are real video frames — asserted by
+       `tests/test_detect.py` with a stub model. A real-clip run (stable IDs
+       on actual footage) needs `ultralytics` + fine-tuned weights.
 6. [ ] **tracker.py** — collapse the track log into unique pothole events,
        tolerating ID flicker. Done when the event count on a short clip
        matches a manual count.

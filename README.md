@@ -69,8 +69,9 @@ dashcam video + GPS CSV -> YOLO detection -> tracking (unique IDs)
 1. [x] Folder structure, requirements.txt, README
 2. [x] Classical OpenCV baseline
 3. [ ] Colab training notebook (dataset download, train, export best.pt)
-4. [ ] GPS source decision (phone GPS logger CSV or simulated route)
-5. [ ] detect.py (YOLOv8 + ByteTrack -> raw track log)
+       — code ready (`src/train.py` + notebook); waiting on the GPU run
+4. [x] GPS source decision (phone GPS logger CSV or simulated route)
+5. [x] detect.py (YOLOv8 + ByteTrack -> raw track log)
 6. [ ] tracker.py (unique pothole IDs, one event per pothole)
 7. [ ] severity.py
 8. [ ] geotag.py
@@ -78,7 +79,58 @@ dashcam video + GPS CSV -> YOLO detection -> tracking (unique IDs)
 10. [ ] evaluate.py (baseline vs YOLOv8n vs YOLOv8s, day/night/wet/blur)
 11. [ ] Streamlit dashboard
 
+## GPS source (step 4 decision)
+
+- **Primary:** phone GPS logger app exporting a CSV with
+  `timestamp_sec, latitude, longitude` (`timestamp_sec` = Unix epoch seconds;
+  ISO 8601 strings are converted on load, naive datetimes assumed
+  Asia/Kolkata +05:30). One CSV per clip in `data/gps_logs/`.
+- **Fallback / demo:** simulated route — `tests/make_fake_data.py` writes a
+  1 Hz northbound route from Ahmedabad, so the whole back half of the pipeline
+  runs and demos without any recorded GPS.
+- **Sync:** the video start is either parsed from a dashcam-style filename
+  (`YYYYMMDD_HHMMSS.mp4`) or passed explicitly (`geotag.py --start-time`).
+  Both GPS forms and both start-time forms are already supported.
+
+## Running the pipeline
+
+Run from the repo root (Windows: use `venv\Scripts\python.exe`):
+
+```bash
+# 0. tests — fake data only, no model, no GPU
+python tests/make_fake_video.py
+python tests/make_fake_data.py
+python tests/make_fake_track_log.py
+python tests/test_detect.py
+python tests/test_tracker.py
+python tests/test_chain.py
+
+# 1. detect + track (needs ultralytics + weights)
+python -m src.detect data/sample_videos/clip_a.mp4 --frame-skip 2 --conf 0.25
+
+# 2. one event per unique pothole
+python -m src.tracker outputs/track_log_clip_a.csv
+
+# 3. severity
+python -m src.severity outputs/pothole_events.csv
+
+# 4. lat/lon (phone GPS CSV, or --fps for a fake clip)
+python -m src.geotag outputs/pothole_events_severity.csv data/gps_logs/clip_a.csv \
+    --start-time "2026-10-28 10:00:00+05:30"
+
+# 5. map
+python -m src.map_builder outputs/pothole_events_severity_geo.csv --heatmap
+```
+
+## Where things stand (Oct 2026)
+
+Steps 2 and 6-9 are built and covered by the fake-data tests; `detect.py`
+(step 5) is built and its contract is tested with a stub model. Still open:
+the Colab GPU run that produces `models/best.pt` (step 3), a real end-to-end
+run on a dashcam clip, then `evaluate.py` and the Streamlit dashboard.
+
 ---
+
 
 Development conventions and agent working rules: see [AGENTS.md](AGENTS.md).
 Detailed plan with per-step milestones: see [PLAN.md](PLAN.md).

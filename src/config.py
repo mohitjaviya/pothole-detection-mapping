@@ -28,6 +28,16 @@ FRAME_SKIP: int = 2           # process every Nth frame (CPU speed)
 CONF_THRESHOLD: float = 0.25  # YOLO confidence cutoff (detect.py; baseline has none)
 
 # ---------------------------------------------------------------------------
+# Detection (detect.py) — YOLOv8 + ByteTrack
+# ---------------------------------------------------------------------------
+# Weights: evaluate.py copies the winning fine-tuned model here. Until then,
+# pass --weights models/yolov8n.pt for a wiring smoke test (COCO weights have
+# no pothole class, so they detect nothing — that is expected).
+DETECT_WEIGHTS: Path = MODELS_DIR / "best.pt"
+TRACKER_CONFIG: Path = PROJECT_ROOT / "configs" / "bytetrack.yaml"  # static, committed
+WRITE_ANNOTATED_VIDEO: bool = True  # write outputs/detect_<clip>_annotated.mp4
+
+# ---------------------------------------------------------------------------
 # Severity (used by severity.py in a later step; bbox area / frame area.
 # Initial guesses — calibrate visually in a notebook before trusting them.)
 # ---------------------------------------------------------------------------
