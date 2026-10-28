@@ -6,6 +6,8 @@ opencv-python>=4.8
 # Detection + tracking. ultralytics pulls in torch automatically —
 # do NOT add torch here. On Colab, the CUDA torch build comes preinstalled.
 ultralytics>=8.2
+lap>=0.5            # ByteTrack's assignment solver; ultralytics installs it on
+                    #   first track() anyway — pinning avoids a mid-run install
 
 # Mapping + dashboard
 folium>=0.14

@@ -77,7 +77,14 @@ dashcam video + GPS CSV -> YOLO detection -> tracking (unique IDs)
 8. [ ] geotag.py
 9. [ ] map_builder.py
 10. [ ] evaluate.py (baseline vs YOLOv8n vs YOLOv8s, day/night/wet/blur)
-11. [ ] Streamlit dashboard
+        — detection half done: `reports/detection_metrics.csv` +
+        `eval_summary.md` (baseline vs yolov8n on the 125-image test split;
+        yolov8s needs its weights). Counting half waits on clips with manual
+        counts + condition labels.
+11. [ ] Streamlit dashboard — wire the pipeline end to end. Done when the
+        demo runs video -> map in the browser.
+        — built and verified headless (`tests/test_app.py`) and the server
+        boots; a real video -> map demo still waits on footage
 
 ## GPS source (step 4 decision)
 
@@ -101,9 +108,12 @@ Run from the repo root (Windows: use `venv\Scripts\python.exe`):
 python tests/make_fake_video.py
 python tests/make_fake_data.py
 python tests/make_fake_track_log.py
+python tests/make_fake_eval_data.py
 python tests/test_detect.py
 python tests/test_tracker.py
 python tests/test_chain.py
+python tests/test_evaluate.py
+python tests/test_app.py
 
 # 1. detect + track (needs ultralytics + weights)
 python -m src.detect data/sample_videos/clip_a.mp4 --frame-skip 2 --conf 0.25
@@ -120,14 +130,87 @@ python -m src.geotag outputs/pothole_events_severity.csv data/gps_logs/clip_a.cs
 
 # 5. map
 python -m src.map_builder outputs/pothole_events_severity_geo.csv --heatmap
+
+# 6. evaluation (see below)
+python -m src.evaluate --manifest data/eval_manifest.csv --events outputs/pothole_events.csv
 ```
+
+## Evaluation (step 10)
+
+Two independent jobs, because they need different ground truth.
+
+**Counting** needs one row per clip — the manual pothole count and the driving
+condition. Put it at `data/eval_manifest.csv` (owner data, gitignored):
+
+```csv
+source,condition,gt_count
+clip_a.mp4,day,4
+clip_b.mp4,night,3
+clip_c.mp4,wet,2
+```
+
+- `source` — video filename, exactly as it appears in the track log's `source`
+  column
+- `condition` — one of `day`, `night`, `wet`, `blur` (`config.EVAL_CONDITIONS`)
+- `gt_count` — potholes a human counts in that clip
+
+```bash
+python -m src.evaluate --manifest data/eval_manifest.csv --events outputs/pothole_events.csv
+```
+
+**Detection quality** needs labelled images: the classical baseline is scored
+against YOLO `.txt` labels (IoU 0.5), and the YOLOv8 models go through
+`ultralytics val()` for mAP. Prepare the split locally first (CPU only, no
+training):
+
+```bash
+python -m src.train --data-only
+```
+
+```bash
+python -m src.evaluate \
+    --images data/processed/ivcnz/test/images \
+    --labels data/processed/ivcnz/test/labels \
+    --data-yaml data/processed/ivcnz/data.yaml \
+    --models yolov8n yolov8s
+```
+
+Both modes write into `reports/` (committed): `detection_metrics.csv`,
+`count_metrics.csv`, `count_by_condition.csv`, `eval_summary.md`, and
+`eval_counts_by_condition.png`.
+
+Note: the baseline has no confidence score, so it has no PR curve — its mAP is
+`-` by design. It is compared on precision/recall/F1 at IoU 0.5, which is the
+fair comparison for a threshold-free detector.
+
+## Dashboard (step 11)
+
+```bash
+venv\Scripts\streamlit.exe run app\streamlit_app.py
+```
+
+Opens on <http://localhost:8501>. In the sidebar: pick a clip from
+`data/sample_videos/` (or upload one), an optional GPS CSV from
+`data/gps_logs/`, the weights (`models/best.pt` by default), confidence, frame
+skip, and the video start time. Then press **Run pipeline**; the page shows
+unique potholes, geotagged count, the severity chart, the Folium map, the
+annotated clip, the events table, and CSV downloads.
+
+The app writes into `outputs/app/`. Without a GPS CSV it still detects, tracks
+and grades severity — it just cannot put potholes on a map, and it never
+invents coordinates. The pipeline itself is `run_pipeline()` in the same file,
+so `tests/test_app.py` drives the whole chain headlessly with a stub model.
 
 ## Where things stand (Oct 2026)
 
-Steps 2 and 6-9 are built and covered by the fake-data tests; `detect.py`
-(step 5) is built and its contract is tested with a stub model. Still open:
-the Colab GPU run that produces `models/best.pt` (step 3), a real end-to-end
-run on a dashcam clip, then `evaluate.py` and the Streamlit dashboard.
+Steps 2, 5, 6-9 are built and covered by the fake-data tests; `detect.py`'s
+contract is tested with a stub model and has also run against real ultralytics
+with `models/best.pt`. Step 10 is half done — the detection comparison is real
+now (`reports/detection_metrics.csv`: baseline F1 0.039 vs yolov8n mAP50 0.690
+on the 125-image test split); the per-condition counting half needs clips.
+Step 11 (dashboard) is built and the server boots. Still open: real footage
+plus a matching GPS CSV, `yolov8s_best.pt`, and `reports/train_metrics.csv`
+from the Colab run.
 
 ---
 

@@ -250,6 +250,11 @@ def main() -> None:
     parser.add_argument("--zip", type=Path, default=config.DATASET_ZIP, help="local dataset zip override")
     parser.add_argument("--source-dir", type=Path, default=None, help="pre-extracted dataset dir override (skips download)")
     parser.add_argument("--data-dir", type=Path, default=config.PROCESSED_DATASET_DIR, help="split output dir override (tests)")
+    parser.add_argument(
+        "--data-only",
+        action="store_true",
+        help="prepare the dataset split + data.yaml and stop (no GPU, no training)",
+    )
     parser.add_argument("--drive-dir", type=Path, default=None, help="save weights/metrics here immediately (Colab)")
     args = parser.parse_args()
 
@@ -265,6 +270,12 @@ def main() -> None:
         build_split(source_dir, args.data_dir)
         write_data_yaml(args.data_dir)
     data_yaml = args.data_dir / "data.yaml"
+
+    if args.data_only:
+        # Dataset prep is CPU-only and cheap: useful before evaluate.py, and
+        # on a Colab restart where only the split is needed.
+        print(f"[train] --data-only: dataset ready at {data_yaml}, skipping training")
+        return
 
     rows = [train_model(name, data_yaml, args.epochs, args.drive_dir) for name in args.models]
     write_metrics(rows, config.REPORTS_DIR / "train_metrics.csv", args.drive_dir)

@@ -53,8 +53,11 @@ pothole-detection-mapping/
 ## Build order and milestones
 
 1. [x] **Scaffold** — folders, `.gitignore`, `requirements.txt`, README.
-2. [ ] **Classical OpenCV baseline** (`baseline.py`, `config.py`) — done when a
+2. [x] **Classical OpenCV baseline** (`baseline.py`, `config.py`) — done when a
        results table in `reports/` shows why fine-tuning is needed.
+       Done: `reports/detection_metrics.csv` on the 125-image test split —
+       baseline precision 0.058 / recall 0.029 / F1 0.039 vs YOLOv8n
+       precision 0.741 / recall 0.628 / mAP50 0.690.
 3. [ ] **Training** (`src/train.py`, `notebooks/train_colab.ipynb`) — done when
        `models/best.pt` exists locally and val mAP is reported.
 4. [x] **GPS source decision** — phone GPS logger CSV is primary, simulated
@@ -81,8 +84,13 @@ pothole-detection-mapping/
 10. [ ] **evaluate.py** — detection metrics (mAP50, precision/recall) plus
         system-level count accuracy, broken down by condition. Done when
         figures land in `reports/`.
+        Detection half DONE: `reports/detection_metrics.csv` + `eval_summary.md`
+        hold baseline vs yolov8n on the test split (yolov8s still needs its
+        weights). Counting half still needs clips + `data/eval_manifest.csv`.
 11. [ ] **Streamlit dashboard** — wire the pipeline end to end. Done when the
         demo runs video -> map in the browser.
+        Built (`app/streamlit_app.py`) + verified headless
+        (`tests/test_app.py`); a real video -> map demo waits on footage.
 
 ## Decisions and risks
 

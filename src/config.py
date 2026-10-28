@@ -103,3 +103,14 @@ ROUTE_START_LON: float = 72.5714
 # ---------------------------------------------------------------------------
 MAP_DEFAULT_CENTER: tuple[float, float] = (23.0225, 72.5714)
 SEVERITY_COLORS: dict[str, str] = {"small": "#2ecc71", "medium": "#f39c12", "large": "#e74c3c"}
+
+# ---------------------------------------------------------------------------
+# Evaluation (evaluate.py)
+# ---------------------------------------------------------------------------
+# One row per test clip: source, condition, gt_count (manual pothole count).
+# Lives in data/ (it is owner data, not code) — format documented in README.
+EVAL_MANIFEST: Path = DATA_DIR / "eval_manifest.csv"
+EVAL_CONDITIONS: tuple[str, ...] = ("day", "night", "wet", "blur")
+EVAL_IOU: float = 0.5                    # IoU a baseline box needs to count as a hit
+EVAL_MODELS: tuple[str, ...] = ("yolov8n", "yolov8s")  # compared as models/<name>_best.pt
+EVAL_SPLIT: str = "test"                 # dataset split used for YOLO detection metrics

@@ -93,7 +93,10 @@ def add_severity(
         return classify(box_area / (width * height))
 
     result = events.copy()
-    result["severity"] = result.apply(severity_of, axis=1)
+    # A plain loop rather than DataFrame.apply: on an empty events CSV apply()
+    # returns an empty DataFrame, which cannot be assigned to a single column
+    # (a clip with no potholes must produce an empty severity column, not crash).
+    result["severity"] = [severity_of(row) for _, row in result.iterrows()]
     return result
 
 
