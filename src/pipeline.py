@@ -107,12 +107,15 @@ def run_pipeline(
     prefix: str = "",
     save_video: bool = config.WRITE_ANNOTATED_VIDEO,
     heatmap: bool = config.PIPELINE_MAP_HEATMAP,
+    simulate_gps: bool = True,
     model: Any | None = None,
 ) -> PipelineResult:
     """Run the five stages on one clip and return every artifact.
 
     `model` and `track_log` are injectable so the whole chain can be tested
     with a stub model or with no model at all (see tests/test_pipeline.py).
+    `simulate_gps=False` refuses to invent coordinates: no GPS CSV then means
+    no geotag and no map (the dashboard's rule).
     """
     if not video.exists():
         raise RuntimeError(f"video not found: {video}")
@@ -175,6 +178,22 @@ def run_pipeline(
                     "pass the clip's real start time so frames can be matched to GPS"
                 )
             gps_source = "csv"
+        elif not simulate_gps:
+            # Dashboard rule: no GPS CSV means no coordinates at all. A pretty
+            # map of invented places is worse than no map.
+            print("[pipeline] no GPS CSV — geotag and map skipped (simulation disabled)")
+            return PipelineResult(
+                log=log,
+                events=with_severity,
+                geotagged=None,
+                annotated_video=annotated_video,
+                map_html=None,
+                untagged=0,
+                stats=stats,
+                out_dir=out_dir,
+                gps_source="none",
+                paths=paths,
+            )
         else:
             # Simulated fallback: the clock start only has to be deterministic.
             if resolved_start is None:
@@ -242,6 +261,11 @@ def main() -> None:
     parser.add_argument("--out-dir", type=Path, default=config.PIPELINE_OUT_DIR)
     parser.add_argument("--no-video", action="store_true", help="skip the annotated video")
     parser.add_argument("--no-heatmap", action="store_true", help="drop the map heatmap layer")
+    parser.add_argument(
+        "--no-simulated-gps",
+        action="store_true",
+        help="without --gps, skip geotag/map instead of generating a simulated route",
+    )
     args = parser.parse_args()
 
     if not args.video.exists():
@@ -262,6 +286,7 @@ def main() -> None:
         prefix=f"{args.video.stem}_",
         save_video=not args.no_video,
         heatmap=not args.no_heatmap,
+        simulate_gps=not args.no_simulated_gps,
     )
 
     print(f"[pipeline] GPS source: {result.gps_source}")
