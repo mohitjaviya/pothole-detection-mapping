@@ -13,11 +13,14 @@ dashcam video + GPS CSV
   -> src/geotag.py        (frame timestamp -> lat/lon)
   -> src/map_builder.py   (Folium map + CSV report)
   -> app/streamlit_app.py (demo dashboard)
+
+or in one command: src/pipeline.py <video> [--gps CSV] [--track-log CSV]
 ```
 
 Each stage reads and writes CSVs, so the back half (severity -> map) can be
 built, tested, and demoed repeatedly without a GPU, while only
-`detect.py`/`train.py` touch the model.
+`detect.py`/`train.py` touch the model. `robustness.py` re-runs detection on
+degraded copies of a clip for the report's robustness section.
 
 ## Folder structure
 
@@ -37,7 +40,9 @@ pothole-detection-mapping/
 │   ├── severity.py        # bbox-area fraction -> small/medium/large
 │   ├── geotag.py          # frame timestamp -> GPS lat/lon join
 │   ├── map_builder.py     # Folium map + CSV report (no model dependency)
-│   └── evaluate.py        # baseline vs YOLOv8n vs YOLOv8s; day/night/wet/blur
+│   ├── pipeline.py        # one command: detect -> tracker -> severity -> geotag -> map
+│   ├── evaluate.py        # baseline vs YOLOv8n vs YOLOv8s; day/night/wet/blur
+│   └── robustness.py      # dim/blur/noise/motion sweep -> reports/robustness.csv
 ├── configs/               # static YAML (bytetrack.yaml); data.yaml is generated
 │                          #   per run into data/processed/ivcnz/ (never committed)
 ├── app/streamlit_app.py   # demo dashboard
@@ -58,8 +63,12 @@ pothole-detection-mapping/
        Done: `reports/detection_metrics.csv` on the 125-image test split —
        baseline precision 0.058 / recall 0.029 / F1 0.039 vs YOLOv8n
        precision 0.741 / recall 0.628 / mAP50 0.690.
-3. [ ] **Training** (`src/train.py`, `notebooks/train_colab.ipynb`) — done when
+3. [x] **Training** (`src/train.py`, `notebooks/train_colab.ipynb`) — done when
        `models/best.pt` exists locally and val mAP is reported.
+       Done: `models/best.pt` = fine-tuned yolov8n (`names: {0: 'pothole'}`),
+       test split (125 images / 346 instances): P 0.741, R 0.628, mAP50 0.690,
+       mAP50-95 0.367 (`reports/detection_metrics.csv`). `reports/train_metrics.csv`
+       from the Colab run is still to be copied over.
 4. [x] **GPS source decision** — phone GPS logger CSV is primary, simulated
        route is the fallback/demo. Done: both timestamp forms (epoch + ISO)
        and both start-time forms (filename + `--start-time`) are supported,
@@ -67,30 +76,44 @@ pothole-detection-mapping/
 5. [x] **detect.py** — YOLOv8 + ByteTrack on a sample video (`persist=True`),
        CPU-friendly (yolov8n, frame skip). Done: `track_log.csv` columns match
        `tracker.py` and frame indices are real video frames — asserted by
-       `tests/test_detect.py` with a stub model. A real-clip run (stable IDs
-       on actual footage) needs `ultralytics` + fine-tuned weights.
-6. [ ] **tracker.py** — collapse the track log into unique pothole events,
-       tolerating ID flicker. Done when the event count on a short clip
-       matches a manual count.
-7. [ ] **severity.py** — thresholds calibrated visually in a notebook. Done
-       when every event carries small/medium/large and spot-checked crops
-       agree with the labels.
-8. [ ] **geotag.py** — frame N timestamp = video start + N/fps -> nearest GPS
-       row within tolerance. Done when `pothole_events_geo.csv` has plausible
-       lat/lon values.
-9. [ ] **map_builder.py** — severity-colored markers, optional heatmap,
-       snapshot popups. Done when `outputs/map.html` opens with potholes in
-       sensible positions.
-10. [ ] **evaluate.py** — detection metrics (mAP50, precision/recall) plus
+       `tests/test_detect.py` with a stub model, and run for real on
+       `data/sample_videos/` (see the sample-clip table in README).
+6. [x] **tracker.py** — collapse the track log into unique pothole events,
+       tolerating ID flicker. Done: flicker/split merges and the short-track
+       drop are asserted by `tests/test_tracker.py`; `tests/test_detect.py`
+       proves the detect -> tracker hand-off. Event-count-vs-manual-count on a
+       real pothole clip still needs that clip.
+7. [x] **severity.py** — thresholds calibrated visually in a notebook. Done:
+       every event carries small/medium/large, empty inputs handled, and
+       `tests/test_chain.py` asserts an engineered 3/3/2 distribution.
+       Visual calibration on real footage is still to do.
+8. [x] **geotag.py** — frame N timestamp = video start + N/fps -> nearest GPS
+       row within tolerance. Done: epoch + ISO timestamps, tolerance handling,
+       untagged events counted (not dropped) — asserted by `tests/test_chain.py`
+       (7 tagged at exact route positions, 1 deliberately untagged).
+9. [x] **map_builder.py** — severity-colored markers, optional heatmap,
+       snapshot popups. Done: `outputs/map.html` opens with severity colours,
+       heatmap layer and per-pothole popups (`tests/test_chain.py` counts markers).
+10. [x] **evaluate.py** — detection metrics (mAP50, precision/recall) plus
         system-level count accuracy, broken down by condition. Done when
         figures land in `reports/`.
-        Detection half DONE: `reports/detection_metrics.csv` + `eval_summary.md`
-        hold baseline vs yolov8n on the test split (yolov8s still needs its
-        weights). Counting half still needs clips + `data/eval_manifest.csv`.
-11. [ ] **Streamlit dashboard** — wire the pipeline end to end. Done when the
-        demo runs video -> map in the browser.
-        Built (`app/streamlit_app.py`) + verified headless
-        (`tests/test_app.py`); a real video -> map demo waits on footage.
+        Detection half DONE: `reports/detection_metrics.csv`,
+        `eval_comparison.csv` + `eval_comparison.png`, `eval_summary.md`
+        (baseline vs yolov8n on the test split; yolov8s still needs its
+        weights). `--methods name=path` scores pre-computed prediction files
+        with no torch. Counting half still needs clips + `data/eval_manifest.csv`.
+11. [x] **Streamlit dashboard** — wire the pipeline end to end. Done: the demo
+        runs video -> map in the browser, with detection sliders, tracker
+        sliders, video + GPS upload, and a demo mode that needs no model or
+        clip. Verified headless (`tests/test_app.py`) and the server boots
+        (health `ok`, page `200`).
+12. [x] **pipeline.py** — one command for detect -> tracker -> severity ->
+        geotag -> map, with `--track-log` (skip detection) and a simulated
+        route when no GPS CSV is given. Asserted by `tests/test_pipeline.py`.
+13. [x] **robustness.py** — dim / blur / noise / motion-blur copies of one
+        clip -> `reports/robustness.csv` (detections, unique tracks, retention).
+        Asserted with a stub model by `tests/test_robustness.py`; the committed
+        table is from the wiring clip and must be re-run on real footage.
 
 ## Decisions and risks
 
