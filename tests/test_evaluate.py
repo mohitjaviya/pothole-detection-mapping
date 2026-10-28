@@ -15,16 +15,25 @@ import subprocess
 import pandas as pd
 
 from make_fake_data import main as make_events
-from make_fake_eval_data import IMAGES_DIR, LABELS_DIR, MANIFEST_PATH, main as make_eval_data
+from make_fake_eval_data import (
+    GOOD_PREDICTIONS,
+    IMAGES_DIR,
+    LABELS_DIR,
+    MANIFEST_PATH,
+    WEAK_PREDICTIONS,
+    main as make_eval_data,
+)
 from src import config
 from src.evaluate import (
     count_accuracy,
     evaluate_baseline,
     evaluate_counts,
+    evaluate_predictions,
     load_manifest,
     load_yolo_label,
     markdown_table,
     match_boxes,
+    parse_method,
     write_reports,
 )
 
@@ -48,26 +57,32 @@ def test_matching() -> None:
 
 
 def test_labels() -> None:
-    """YOLO .txt -> absolute xyxy round trip; a missing label means no potholes."""
+    """YOLO .txt -> absolute xyxy round trip; missing AND empty labels mean
+    background (no potholes), never 'unknown'."""
     parsed = load_yolo_label(LABELS_DIR / "img1.txt", 640, 360)
     expected = (300.0, 250.0, 340.0, 290.0)
     assert len(parsed) == 1, parsed
     assert all(abs(p - e) < 1e-3 for p, e in zip(parsed[0], expected)), parsed
     assert load_yolo_label(LABELS_DIR / "does_not_exist.txt", 640, 360) == []
-    print("[test] labels: round-trip exact, missing file -> empty ground truth")
+    assert (LABELS_DIR / "img4.txt").exists(), "img4 must have an EMPTY label file"
+    assert load_yolo_label(LABELS_DIR / "img4.txt", 640, 360) == []
+    print("[test] labels: round-trip exact, missing and empty files -> empty ground truth")
 
 
 def test_baseline_detection() -> None:
     """P/R/F1 through a stub detector with known tp/fp/fn, then the real one."""
     img1_box = (300.0, 250.0, 340.0, 290.0)
 
-    # Stub always returns img1's box: hits img1, misses img2's two, and
-    # false-positives on img3 (which has no potholes at all).
+    # Weak stub: always returns img1's box. Hits img1 (1 tp), misses img2's
+    # two potholes (2 fn) and false-positives on BOTH clean-road negatives
+    # img3 (no label file) and img4 (empty label file) -> 3 fp.
+    # P = 1/4 = 0.25, R = 1/3, F1 = 0.286
     scored = evaluate_baseline(IMAGES_DIR, LABELS_DIR, detector=lambda frame: [img1_box])
-    assert (scored["tp"], scored["fp"], scored["fn"]) == (1, 2, 2), scored
-    assert abs(scored["precision"] - 1 / 3) < 1e-9, scored["precision"]
+    assert (scored["tp"], scored["fp"], scored["fn"]) == (1, 3, 2), scored
+    assert abs(scored["precision"] - 0.25) < 1e-9, scored["precision"]
     assert abs(scored["recall"] - 1 / 3) < 1e-9, scored["recall"]
-    assert abs(scored["f1"] - 1 / 3) < 1e-9, scored["f1"]
+    assert abs(scored["f1"] - 0.2857142857) < 1e-6, scored["f1"]
+    assert scored["instances"] == 3, "3 ground-truth potholes (1 + 2 + 0 + 0)"
     assert scored["map50"] is None, "baseline has no confidence -> no mAP, by design"
 
     silent = evaluate_baseline(IMAGES_DIR, LABELS_DIR, detector=lambda frame: [])
@@ -79,7 +94,34 @@ def test_baseline_detection() -> None:
     real = evaluate_baseline(IMAGES_DIR, LABELS_DIR)
     assert real["tp"] + real["fn"] == 3, real
     assert real["fp"] >= 0, real
-    print(f"[test] baseline: stub P/R/F1 = 1/3, real run tp={real['tp']} fp={real['fp']} fn={real['fn']}")
+    print(
+        f"[test] baseline: weak stub P=0.25 R=1/3 F1=0.286, "
+        f"real run tp={real['tp']} fp={real['fp']} fn={real['fn']}"
+    )
+
+
+def test_predictions() -> None:
+    """--methods name=path: pre-computed boxes scored with no model at all."""
+    weak = evaluate_predictions("weak", WEAK_PREDICTIONS, IMAGES_DIR, LABELS_DIR)
+    assert (weak["tp"], weak["fp"], weak["fn"]) == (1, 3, 2), weak
+    assert abs(weak["precision"] - 0.25) < 1e-9
+    assert abs(weak["recall"] - 1 / 3) < 1e-9
+    assert abs(weak["f1"] - 0.2857142857) < 1e-6
+    assert weak["detector"] == "weak"
+
+    good = evaluate_predictions("good", GOOD_PREDICTIONS, IMAGES_DIR, LABELS_DIR)
+    assert (good["tp"], good["fp"], good["fn"]) == (3, 0, 0), good
+    assert abs(good["precision"] - 1.0) < 1e-9 and abs(good["recall"] - 1.0) < 1e-9
+    assert abs(good["f1"] - 1.0) < 1e-9
+
+    assert parse_method("yolov8n=outputs/preds.csv") == ("yolov8n", Path("outputs/preds.csv"))
+    try:
+        parse_method("no-separator")
+    except Exception as exc:  # argparse.ArgumentTypeError
+        assert "name=path" in str(exc), exc
+    else:
+        raise AssertionError("a --methods value without '=' should be rejected")
+    print("[test] predictions: weak 1/3/2 (P=0.25, R=1/3), good 3/0/0 (P=R=F1=1)")
 
 
 def test_counts() -> None:
@@ -136,13 +178,19 @@ def test_reports(per_clip: pd.DataFrame, per_condition: pd.DataFrame) -> None:
     written = write_reports(detection, per_clip, per_condition, out_dir)
     names = {path.name for path in written}
 
-    required = {"detection_metrics.csv", "count_metrics.csv", "count_by_condition.csv", "eval_summary.md"}
+    required = {
+        "detection_metrics.csv",
+        "eval_comparison.csv",
+        "count_metrics.csv",
+        "count_by_condition.csv",
+        "eval_summary.md",
+    }
     assert required <= names, names
     summary = (out_dir / "eval_summary.md").read_text(encoding="utf-8")
     assert "Detection quality" in summary and "Pothole counting by condition" in summary
     assert "| night |" in summary, "per-condition row missing from the summary"
     assert "mAP is reported as" in summary, "the baseline no-mAP caveat must be stated"
-    assert "| baseline | 3 | 3 | 0 | 0 | 3 |" in summary, "detection counts must render as integers"
+    assert "| baseline | 4 | 3 | 0 | 0 | 3 |" in summary, "detection counts must render as integers"
     print(f"[test] reports: {sorted(names)}")
 
 
@@ -172,6 +220,28 @@ def test_cli() -> None:
     assert good.returncode == 0, good.stderr
     assert "count_by_condition.csv" in good.stdout, good.stdout
 
+    # --methods name=path: pre-computed predictions, still no torch
+    methods_dir = FAKE_DIR / "reports_methods"
+    methods = subprocess.run(
+        [
+            sys.executable, "-m", "src.evaluate",
+            "--images", str(IMAGES_DIR),
+            "--labels", str(LABELS_DIR),
+            f"--methods", f"weak={WEAK_PREDICTIONS}", f"good={GOOD_PREDICTIONS}",
+            "--out-dir", str(methods_dir),
+        ],
+        cwd=config.PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert methods.returncode == 0, methods.stderr
+    comparison = pd.read_csv(methods_dir / "eval_comparison.csv").set_index("method")
+    assert comparison.loc["weak", "tp"] == 1 and comparison.loc["weak", "fp"] == 3
+    assert abs(comparison.loc["weak", "precision"] - 0.25) < 1e-9
+    assert comparison.loc["good", "tp"] == 3
+    assert (methods_dir / "eval_comparison.png").exists(), "comparison figure missing"
+    print("[test] CLI: counting mode runs, --methods scored, half-specified mode rejected")
+
     bad = subprocess.run(
         [sys.executable, "-m", "src.evaluate", "--manifest", str(MANIFEST_PATH)],
         cwd=config.PROJECT_ROOT,
@@ -179,7 +249,16 @@ def test_cli() -> None:
         text=True,
     )
     assert bad.returncode != 0 and "BOTH" in bad.stderr, (bad.returncode, bad.stderr)
-    print("[test] CLI: counting mode runs, half-specified mode rejected")
+
+    # --methods without --images has nothing to score against
+    orphan = subprocess.run(
+        [sys.executable, "-m", "src.evaluate", "--methods", f"weak={WEAK_PREDICTIONS}"],
+        cwd=config.PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert orphan.returncode != 0 and "--images" in orphan.stderr, (orphan.returncode, orphan.stderr)
+    print("[test] CLI: counting mode runs, --methods scored, bad invocations rejected")
 
 
 def main() -> None:
@@ -188,6 +267,7 @@ def main() -> None:
     test_matching()
     test_labels()
     test_baseline_detection()
+    test_predictions()
     per_clip, per_condition = test_counts()
     test_manifest_guard()
     test_markdown_integers()

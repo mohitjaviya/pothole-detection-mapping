@@ -17,6 +17,8 @@ Two independent jobs, because they need different ground truth:
 
 Outputs (committed, they feed the semester report):
     reports/detection_metrics.csv
+    reports/eval_comparison.csv        one row per method: tp/fp/fn + P/R/F1
+    reports/eval_comparison.png        grouped bars of P/R/F1 per method
     reports/count_metrics.csv
     reports/count_by_condition.csv
     reports/eval_summary.md
@@ -26,11 +28,18 @@ CLI (repo root):
     python -m src.evaluate --manifest data/eval_manifest.csv --events outputs/pothole_events.csv
     python -m src.evaluate --images data/processed/ivcnz/test/images --labels data/processed/ivcnz/test/labels
     python -m src.evaluate --data-yaml data/processed/ivcnz/data.yaml [--models yolov8n yolov8s]
+    # score PRE-COMPUTED predictions (no model, no torch) — name=path pairs:
+    python -m src.evaluate --images <dir> --labels <dir> \
+        --methods baseline=outputs/preds_baseline.csv yolov8n=outputs/preds_yolov8n.csv
+
+`name=path` accepts either a CSV (columns image, x1, y1, x2, y2 — absolute
+pixels) or a folder of YOLO .txt files (cls cx cy w h, normalized). That is
+how a Colab-produced prediction set can be scored locally without torch.
 """
 
 import argparse
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import cv2
 import numpy as np
@@ -145,6 +154,44 @@ def label_path_for(image: Path, labels_dir: Path | None) -> Path:
     return image.with_suffix(".txt")
 
 
+def image_paths(images_dir: Path) -> list[Path]:
+    """Every image file under images_dir, sorted (deterministic scoring order)."""
+    images = sorted(
+        path for path in images_dir.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    )
+    if not images:
+        raise RuntimeError(f"no images found in {images_dir}")
+    return images
+
+
+def score_images(
+    images_dir: Path,
+    labels_dir: Path | None,
+    iou_thr: float,
+    boxes_for_image: Callable[[Path, np.ndarray], list[Box]],
+) -> dict[str, int]:
+    """Accumulate tp / fp / fn over an image set, whatever produced the boxes.
+
+    One shared loop for the classical baseline and for pre-computed
+    prediction files, so both are scored by exactly the same matching code
+    (a comparison is only fair if the two sides go through the same gate).
+
+    An image with an EMPTY or MISSING label file is background: every box
+    predicted on it is a false positive.
+    """
+    images = image_paths(images_dir)
+    tp = fp = fn = 0
+    for image_path in images:
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            raise RuntimeError(f"Could not read image: {image_path}")
+        height, width = frame.shape[:2]
+        gt = load_yolo_label(label_path_for(image_path, labels_dir), width, height)
+        image_tp, image_fp, image_fn = match_boxes(boxes_for_image(image_path, frame), gt, iou_thr)
+        tp, fp, fn = tp + image_tp, fp + image_fp, fn + image_fn
+    return {"images": len(images), "tp": tp, "fp": fp, "fn": fn}
+
+
 def evaluate_baseline(
     images_dir: Path,
     labels_dir: Path | None = None,
@@ -156,28 +203,14 @@ def evaluate_baseline(
     `detector` is injectable so tests can score known boxes through the exact
     same matching path (no dependence on what Canny happens to find).
     """
-    images = sorted(
-        path for path in images_dir.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
-    )
-    if not images:
-        raise RuntimeError(f"no images found in {images_dir}")
+    counts = score_images(images_dir, labels_dir, iou_thr, lambda _path, frame: detector(frame))
 
-    tp = fp = fn = 0
-    for image_path in images:
-        frame = cv2.imread(str(image_path))
-        if frame is None:
-            raise RuntimeError(f"Could not read image: {image_path}")
-        height, width = frame.shape[:2]
-        pred = detector(frame)
-        gt = load_yolo_label(label_path_for(image_path, labels_dir), width, height)
-        image_tp, image_fp, image_fn = match_boxes(pred, gt, iou_thr)
-        tp, fp, fn = tp + image_tp, fp + image_fp, fn + image_fn
-
+    tp, fp, fn = counts["tp"], counts["fp"], counts["fn"]
     precision, recall, f1 = precision_recall_f1(tp, fp, fn)
-    print(f"[evaluate] baseline on {len(images)} images: tp={tp} fp={fp} fn={fn}")
+    print(f"[evaluate] baseline on {counts['images']} images: tp={tp} fp={fp} fn={fn}")
     return {
         "detector": "baseline",
-        "images": len(images),
+        "images": counts["images"],
         "instances": tp + fn,  # ground-truth potholes = hits + misses
         "tp": tp,
         "fp": fp,
@@ -186,6 +219,96 @@ def evaluate_baseline(
         "recall": recall,
         "f1": f1,
         "map50": None,      # no confidence score -> no PR curve, hence no mAP
+        "map50_95": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pre-computed predictions (--methods name=path): no model, no torch
+# ---------------------------------------------------------------------------
+PREDICTION_COLUMNS = {"image", "x1", "y1", "x2", "y2"}
+
+
+def load_prediction_csv(path: Path) -> dict[str, list[Box]]:
+    """Prediction CSV (image, x1, y1, x2, y2 — absolute pixels) -> boxes per
+    image NAME, so a path in the CSV still matches a flat image folder."""
+    table = pd.read_csv(path)
+    missing = PREDICTION_COLUMNS - set(table.columns)
+    if missing:
+        raise RuntimeError(f"prediction CSV missing columns {sorted(missing)}: {path}")
+    predictions: dict[str, list[Box]] = {}
+    for row in table.itertuples(index=False):
+        predictions.setdefault(Path(str(row.image)).name, []).append(
+            (float(row.x1), float(row.y1), float(row.x2), float(row.y2))
+        )
+    return predictions
+
+
+def load_prediction_dir(path: Path, images_dir: Path) -> dict[str, list[Box]]:
+    """A folder of YOLO .txt predictions (cls cx cy w h, normalized).
+
+    The same parser as the labels: a prediction file is in the same format,
+    it just comes from a detector instead of a human annotator.
+    """
+    by_stem = {image.stem: image for image in image_paths(images_dir)}
+    predictions: dict[str, list[Box]] = {}
+    for txt in sorted(path.glob("*.txt")):
+        image_path = by_stem.get(txt.stem)
+        if image_path is None:
+            print(f"[evaluate] WARNING: prediction {txt.name} has no matching image — skipped")
+            continue
+        frame = cv2.imread(str(image_path))
+        if frame is None:
+            raise RuntimeError(f"Could not read image: {image_path}")
+        height, width = frame.shape[:2]
+        predictions[image_path.name] = load_yolo_label(txt, width, height)
+    return predictions
+
+
+def load_predictions(path: Path, images_dir: Path) -> dict[str, list[Box]]:
+    """--methods target: a prediction CSV or a folder of YOLO .txt files."""
+    return load_prediction_dir(path, images_dir) if path.is_dir() else load_prediction_csv(path)
+
+
+def parse_method(text: str) -> tuple[str, Path]:
+    """'yolov8n=outputs/preds.csv' -> ('yolov8n', Path('outputs/preds.csv'))."""
+    name, separator, raw_path = text.partition("=")
+    if not separator or not name.strip() or not raw_path.strip():
+        raise argparse.ArgumentTypeError(f"bad --methods value {text!r} (expected name=path)")
+    return name.strip(), Path(raw_path.strip())
+
+
+def evaluate_predictions(
+    name: str,
+    path: Path,
+    images_dir: Path,
+    labels_dir: Path | None = None,
+    iou_thr: float = config.EVAL_IOU,
+) -> dict[str, object]:
+    """P/R/F1 for a pre-computed prediction set (no weights, no torch).
+
+    This is the local half of the Colab workflow: run the detectors on the
+    GPU, dump their boxes, then score every method here through one gate.
+    """
+    predictions = load_predictions(path, images_dir)
+    counts = score_images(
+        images_dir, labels_dir, iou_thr, lambda image_path, _frame: predictions.get(image_path.name, [])
+    )
+
+    tp, fp, fn = counts["tp"], counts["fp"], counts["fn"]
+    precision, recall, f1 = precision_recall_f1(tp, fp, fn)
+    print(f"[evaluate] {name} on {counts['images']} images: tp={tp} fp={fp} fn={fn}")
+    return {
+        "detector": name,
+        "images": counts["images"],
+        "instances": tp + fn,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+        "map50": None,      # boxes carry no scores here -> no PR curve
         "map50_95": None,
     }
 
@@ -372,11 +495,34 @@ def _cell(value: object) -> str:
     return str(value)
 
 
-def plot_counts(per_condition: pd.DataFrame, out_path: Path) -> Path | None:
-    """Grouped bars: manual count vs pipeline count per condition.
+def comparison_table(detection: pd.DataFrame) -> pd.DataFrame:
+    """Per-method comparison table for eval_comparison.csv / .png.
 
-    Returns None when matplotlib is missing — a missing figure must never
-    fail an evaluation run (the CSVs are the source of truth).
+    `method` is the detector name. When a method reports precision and recall
+    but no F1 (ultralytics val() gives P/R/mAP, not F1), F1 is derived from
+    them — the harmonic mean, exactly what F1 means — so the table compares
+    like with like instead of showing a blank.
+    """
+    table = detection.copy()
+    table = table.rename(columns={"detector": "method"})
+    for column in ("precision", "recall", "f1"):
+        if column not in table.columns:
+            table[column] = float("nan")
+    precision = pd.to_numeric(table["precision"], errors="coerce")
+    recall = pd.to_numeric(table["recall"], errors="coerce")
+    f1 = pd.to_numeric(table["f1"], errors="coerce")
+    derived = 2 * precision * recall / (precision + recall)
+    table["f1"] = f1.fillna(derived)
+    columns = ["method", "images", "instances", "tp", "fp", "fn", "precision", "recall", "f1"]
+    extra = [column for column in ("map50", "map50_95") if column in table.columns]
+    return table.reindex(columns=columns + extra)
+
+
+def _pyplot() -> Any:
+    """matplotlib.pyplot with the headless Agg backend, or None when missing.
+
+    A missing figure must never fail an evaluation run: the CSVs are the
+    source of truth, the PNG is a convenience for the report.
     """
     try:
         import matplotlib
@@ -385,6 +531,58 @@ def plot_counts(per_condition: pd.DataFrame, out_path: Path) -> Path | None:
         import matplotlib.pyplot as plt
     except ImportError:
         print("[evaluate] matplotlib not installed — skipping the figure")
+        return None
+    return plt
+
+
+def plot_comparison(detection: pd.DataFrame, out_path: Path) -> Path | None:
+    """Grouped bars: precision / recall / F1 per method (eval_comparison.png).
+
+    Uses comparison_table(), so a method without a reported F1 still gets the
+    derived value rather than a misleading zero-height bar.
+    """
+    plt = _pyplot()
+    if plt is None or detection.empty:
+        return None
+
+    data = comparison_table(detection)
+    for column in ("precision", "recall", "f1"):
+        data[column] = pd.to_numeric(data[column], errors="coerce").fillna(0.0)
+
+    positions = np.arange(len(data))
+    width = 0.26
+    figure, axis = plt.subplots(figsize=(8, 4))
+    for offset, (column, label, color) in zip(
+        (-width, 0.0, width),
+        (
+            ("precision", "precision", "#4c72b0"),
+            ("recall", "recall", "#dd8452"),
+            ("f1", "F1", "#55a868"),
+        ),
+    ):
+        axis.bar(positions + offset, data[column], width, label=label, color=color)
+    axis.set_xticks(positions, [str(value) for value in data["method"]], rotation=15)
+    axis.set_ylim(0, 1)
+    axis.set_ylabel("score (IoU 0.5)")
+    axis.set_title("Detector comparison")
+    axis.legend()
+    axis.grid(axis="y", alpha=0.3)
+    figure.tight_layout()
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(out_path, dpi=150)
+    plt.close(figure)
+    return out_path
+
+
+def plot_counts(per_condition: pd.DataFrame, out_path: Path) -> Path | None:
+    """Grouped bars: manual count vs pipeline count per condition.
+
+    Returns None when matplotlib is missing — a missing figure must never
+    fail an evaluation run (the CSVs are the source of truth).
+    """
+    plt = _pyplot()
+    if plt is None:
         return None
 
     data = per_condition[per_condition["condition"] != "ALL"]
@@ -423,6 +621,13 @@ def write_reports(
         path = out_dir / "detection_metrics.csv"
         detection.to_csv(path, index=False)
         written.append(path)
+        # Same numbers under the name the report refers to, plus the figure.
+        comparison = out_dir / "eval_comparison.csv"
+        comparison_table(detection).to_csv(comparison, index=False)
+        written.append(comparison)
+        figure = plot_comparison(detection, out_dir / "eval_comparison.png")
+        if figure is not None:
+            written.append(figure)
     if per_clip is not None:
         path = out_dir / "count_metrics.csv"
         per_clip.to_csv(path, index=False)
@@ -479,6 +684,21 @@ def main() -> None:
     )
     parser.add_argument("--labels", type=Path, default=None, help="YOLO .txt dir (default: next to the images)")
     parser.add_argument(
+        "--methods",
+        nargs="+",
+        type=parse_method,
+        default=None,
+        metavar="NAME=PATH",
+        help="pre-computed predictions to score (CSV of image,x1,y1,x2,y2 or a folder "
+        "of YOLO .txt) — needs --images; no model, no torch",
+    )
+    parser.add_argument(
+        "--iou",
+        type=float,
+        default=config.EVAL_IOU,
+        help="IoU a predicted box needs to count as a hit (config: EVAL_IOU)",
+    )
+    parser.add_argument(
         "--data-yaml",
         type=Path,
         default=None,
@@ -501,7 +721,14 @@ def main() -> None:
 
     detection_rows: list[dict[str, object]] = []
     if args.images is not None:
-        detection_rows.append(evaluate_baseline(args.images, args.labels))
+        detection_rows.append(evaluate_baseline(args.images, args.labels, args.iou))
+        for name, path in args.methods or []:
+            if not path.exists():
+                print(f"[evaluate] skipping {name}: {path} not found")
+                continue
+            detection_rows.append(evaluate_predictions(name, path, args.images, args.labels, args.iou))
+    elif args.methods:
+        parser.error("--methods needs --images (the labelled image set to score against)")
     if args.data_yaml is not None:
         for name in args.models:
             weights = config.MODELS_DIR / f"{name}_best.pt"
