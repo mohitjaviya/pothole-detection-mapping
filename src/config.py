@@ -70,6 +70,17 @@ IMGSZ: int = 640
 CLASS_NAMES: tuple[str, ...] = ("pothole",)
 
 # ---------------------------------------------------------------------------
+# Tracking post-processing (tracker.py)
+# ---------------------------------------------------------------------------
+# MIN_TRACK_FRAMES counts distinct rows (distinct `frame` values) of a merged
+# track — independent of FRAME_SKIP. MERGE_MAX_GAP_FRAMES is in
+# ORIGINAL-video frame indices (the `frame` column values), so FRAME_SKIP
+# changes do not affect it.
+MIN_TRACK_FRAMES: int = 3      # drop merged tracks appearing in fewer distinct frames
+MERGE_MAX_GAP_FRAMES: int = 8  # max frame-index gap between mergeable box pairs (~0.27 s at 30 fps)
+MERGE_IOU: float = 0.3         # min box overlap for two fragments to be the same pothole
+
+# ---------------------------------------------------------------------------
 # Geotagging (geotag.py)
 # ---------------------------------------------------------------------------
 GPS_TOLERANCE_SEC: float = 2.0          # max gap between event time and a GPS fix
