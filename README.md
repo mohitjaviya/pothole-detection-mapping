@@ -135,6 +135,20 @@ python -m src.map_builder outputs/pothole_events_severity_geo.csv --heatmap
 python -m src.evaluate --manifest data/eval_manifest.csv --events outputs/pothole_events.csv
 ```
 
+## Sample clips (`data/sample_videos/`, never committed)
+
+| Clip | What it is | Use it for |
+| --- | --- | --- |
+| `clip_a.mp4` | public stock clip: smooth city street, cracks only, no potholes | speed checks — 0 detections is the *correct* answer |
+| `clip_b.mp4` | public stock clip: snowy Nordic road, no potholes | negative test — any detection here is a false positive |
+| `clip_synthetic_photos.mp4` | 10 IVCNZ pothole photos held 20 frames each, built by `python tests/make_photo_clip.py` | **wiring tests only** |
+
+> ⚠️ `clip_synthetic_photos.mp4` is **not dashcam footage**. Its frames are
+> close-up pothole photos, so the detection, tracking and count numbers it
+> produces only prove the pipeline is connected end to end.
+> **Never use its numbers as results in the report.** Real results come from a
+> dashcam clip plus a matching GPS log.
+
 ## Evaluation (step 10)
 
 Two independent jobs, because they need different ground truth.
