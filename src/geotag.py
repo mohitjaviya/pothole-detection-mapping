@@ -141,6 +141,16 @@ def geotag_events(
     if missing_cols:
         raise RuntimeError(f"events CSV missing columns: {sorted(missing_cols)}")
 
+    if events.empty:
+        # A clip with no potholes is a valid result: return empty coordinates
+        # instead of crashing on min()/max() of an empty column.
+        print("[geotag] no events — nothing to geotag")
+        result = events.copy()
+        result["event_ts"] = pd.Series(dtype=float)
+        result["latitude"] = pd.Series(dtype=float)
+        result["longitude"] = pd.Series(dtype=float)
+        return result, 0
+
     sources = events["source"].unique().tolist()
     if start_time is None:
         if len(sources) != 1:

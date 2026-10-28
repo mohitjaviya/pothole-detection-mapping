@@ -99,6 +99,25 @@ ROUTE_START_LAT: float = 23.0225        # fake-route origin: Ahmedabad
 ROUTE_START_LON: float = 72.5714
 
 # ---------------------------------------------------------------------------
+# Simulated route (pipeline.py fallback when no real GPS CSV is given)
+# ---------------------------------------------------------------------------
+# Straight northbound line from ROUTE_START_LAT/LON, one fix per second. The
+# clock start is FIXED so two runs of the same clip produce the same CSV.
+# Coordinates from this route are NOT where the clip was filmed: the map is a
+# wiring demonstration, and the report must say so.
+ROUTE_SPEED_KMH: float = 35.0
+ROUTE_SECONDS: int = 60                                        # minimum route length
+SIM_START_ISO: str = "2026-01-01 10:00:00+05:30"               # deterministic fake clock
+
+# ---------------------------------------------------------------------------
+# Pipeline (pipeline.py — one command for detect -> tracker -> severity ->
+# geotag -> map_builder)
+# ---------------------------------------------------------------------------
+PIPELINE_OUT_DIR: Path = OUTPUTS_DIR
+PIPELINE_MAP_HEATMAP: bool = True        # add the heatmap layer to the map
+PIPELINE_VIDEO_FPS_FALLBACK: float = 30.0  # fps used when the container has none
+
+# ---------------------------------------------------------------------------
 # Mapping (map_builder.py)
 # ---------------------------------------------------------------------------
 MAP_DEFAULT_CENTER: tuple[float, float] = (23.0225, 72.5714)
