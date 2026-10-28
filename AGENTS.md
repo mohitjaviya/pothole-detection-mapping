@@ -25,6 +25,8 @@ the approved plan with per-step milestones lives in PLAN.md.
 - `notebooks/` — `train_colab.ipynb`.
 - `reports/` — evaluation figures and metric tables for the semester report
   (committed).
+- `tests/` — reproducible fake-data fixtures + back-half chain test
+  (committed).
 
 ## Environment
 
@@ -43,7 +45,9 @@ the approved plan with per-step milestones lives in PLAN.md.
 - All tunables (paths, thresholds, conf, frame skip) live in `src/config.py` —
   never hardcoded in modules. Static Ultralytics YAML lives in `configs/`;
   `data.yaml` is generated per run into the dataset root (never commit it).
-- GPS CSV columns: `timestamp_sec, latitude, longitude`.
+- GPS CSV columns: `timestamp_sec, latitude, longitude`; `timestamp_sec` is
+  Unix epoch seconds — ISO 8601 strings are auto-converted on load (naive
+  datetimes assumed Asia/Kolkata, +05:30).
 - Severity classes: small / medium / large, from bbox area as a fraction of
   the frame.
 - Write short comments explaining the CV logic — this is a student project

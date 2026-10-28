@@ -68,3 +68,17 @@ SPLIT_RATIOS: tuple[float, float, float] = (0.8, 0.1, 0.1)
 EPOCHS: int = 50
 IMGSZ: int = 640
 CLASS_NAMES: tuple[str, ...] = ("pothole",)
+
+# ---------------------------------------------------------------------------
+# Geotagging (geotag.py)
+# ---------------------------------------------------------------------------
+GPS_TOLERANCE_SEC: float = 2.0          # max gap between event time and a GPS fix
+GPS_DEFAULT_TZ_OFFSET: str = "+05:30"   # Asia/Kolkata — used when a timestamp has no explicit offset
+ROUTE_START_LAT: float = 23.0225        # fake-route origin: Ahmedabad
+ROUTE_START_LON: float = 72.5714
+
+# ---------------------------------------------------------------------------
+# Mapping (map_builder.py)
+# ---------------------------------------------------------------------------
+MAP_DEFAULT_CENTER: tuple[float, float] = (23.0225, 72.5714)
+SEVERITY_COLORS: dict[str, str] = {"small": "#2ecc71", "medium": "#f39c12", "large": "#e74c3c"}
