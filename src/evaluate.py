@@ -502,6 +502,12 @@ def comparison_table(detection: pd.DataFrame) -> pd.DataFrame:
     but no F1 (ultralytics val() gives P/R/mAP, not F1), F1 is derived from
     them — the harmonic mean, exactly what F1 means — so the table compares
     like with like instead of showing a blank.
+
+    Types are part of the contract, because this CSV is pasted into the report:
+    counts (images, instances, tp, fp, fn) are nullable Int64, so they print as
+    `10` and not `10.0`, and stay BLANK for a method that reports no raw counts
+    (ultralytics gives ratios, not tp/fp/fn). Scores are floats rounded to 3
+    decimals — the precision anyone actually quotes.
     """
     table = detection.copy()
     table = table.rename(columns={"detector": "method"})
@@ -515,7 +521,17 @@ def comparison_table(detection: pd.DataFrame) -> pd.DataFrame:
     table["f1"] = f1.fillna(derived)
     columns = ["method", "images", "instances", "tp", "fp", "fn", "precision", "recall", "f1"]
     extra = [column for column in ("map50", "map50_95") if column in table.columns]
-    return table.reindex(columns=columns + extra)
+    table = table.reindex(columns=columns + extra)
+
+    for column in ("images", "instances", "tp", "fp", "fn"):
+        if column in table.columns:
+            # Counts are whole numbers; round() only clears float noise from a
+            # CSV round-trip. Int64 keeps NA representable -> an empty cell.
+            table[column] = pd.to_numeric(table[column], errors="coerce").round(0).astype("Int64")
+    for column in ("precision", "recall", "f1", "map50", "map50_95"):
+        if column in table.columns:
+            table[column] = pd.to_numeric(table[column], errors="coerce").round(3)
+    return table
 
 
 def _pyplot() -> Any:

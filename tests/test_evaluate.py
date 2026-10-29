@@ -26,6 +26,7 @@ from make_fake_eval_data import (
 from src import config
 from src.evaluate import (
     count_accuracy,
+    comparison_table,
     evaluate_baseline,
     evaluate_counts,
     evaluate_predictions,
@@ -261,6 +262,64 @@ def test_cli() -> None:
     print("[test] CLI: counting mode runs, --methods scored, bad invocations rejected")
 
 
+def test_comparison_formatting() -> None:
+    """eval_comparison.csv must be report-ready: counts as integers (blank when
+    a method reports none), scores rounded to 3 decimals."""
+    detection = pd.DataFrame(
+        [
+            {
+                "detector": "baseline",
+                "images": 125,
+                "instances": 346,
+                "tp": 10.0,   # pandas writes counts as floats after a CSV round-trip
+                "fp": 161.0,
+                "fn": 336.0,
+                "precision": 0.05847953216374269,
+                "recall": 0.028901734104046242,
+                "f1": 0.03868471953578336,
+                "map50": None,
+                "map50_95": None,
+            },
+            {
+                "detector": "yolov8n_best",
+                "images": 125,
+                "instances": 346,
+                "tp": None,  # ultralytics reports ratios, not raw counts
+                "fp": None,
+                "fn": None,
+                "precision": 0.7409094128577024,
+                "recall": 0.6281342653783161,
+                "f1": None,
+                "map50": 0.6899967382288985,
+                "map50_95": 0.36671701396134304,
+            },
+        ]
+    )
+    table = comparison_table(detection)
+
+    for column in ("images", "instances", "tp", "fp", "fn"):
+        assert str(table[column].dtype) == "Int64", (column, table[column].dtype)
+    for column in ("precision", "recall", "f1", "map50", "map50_95"):
+        assert str(table[column].dtype) == "float64", (column, table[column].dtype)
+
+    baseline = table.set_index("method").loc["baseline"]
+    assert (baseline["tp"], baseline["fp"], baseline["fn"]) == (10, 161, 336), baseline
+    assert baseline["precision"] == 0.058 and baseline["recall"] == 0.029
+    assert baseline["f1"] == 0.039
+    assert pd.isna(baseline["map50"]), "the baseline has no mAP, by design"
+
+    yolo = table.set_index("method").loc["yolov8n_best"]
+    assert pd.isna(yolo["tp"]) and pd.isna(yolo["fp"]) and pd.isna(yolo["fn"]), yolo
+    assert yolo["f1"] == 0.68, "F1 must be derived and rounded from P and R"
+    assert yolo["map50"] == 0.69 and yolo["map50_95"] == 0.367
+
+    # and it survives a CSV round-trip without turning back into 10.0
+    csv_text = table.to_csv(index=False)
+    assert "baseline,125,346,10,161,336," in csv_text, csv_text
+    assert "yolov8n_best,125,346,,,,0.741,0.628,0.68,0.69,0.367" in csv_text, csv_text
+    print("[test] comparison table: counts as integers, blanks for missing, scores at 3 dp")
+
+
 def main() -> None:
     make_events()
     make_eval_data()
@@ -271,6 +330,7 @@ def main() -> None:
     per_clip, per_condition = test_counts()
     test_manifest_guard()
     test_markdown_integers()
+    test_comparison_formatting()
     test_reports(per_clip, per_condition)
     test_cli()
     print("EVALUATE TEST PASSED")
